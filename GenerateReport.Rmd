@@ -1,0 +1,273 @@
+---
+title: "Critical Care Discharges to Home"
+author: "AJ Clarkin"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+
+```{r environment}
+
+library(tidyverse)
+library(here)
+library(lubridate)
+library(scales)
+
+
+datafile = "data_processed/data.csv"
+
+```
+
+
+```{r import-data}
+
+# Import the data
+# This data as already been processed (column names corrected, dates converted)
+
+df <- read_csv(here(datafile))
+
+
+```
+
+
+
+```{r report-settings}
+
+# Find the latest date in the data file and use that as the latest month to report on.
+# Variables are below to override.
+
+max_date <- max(df$dc_isodate)
+publish_year <- year(max_date)
+publish_month <- month(max_date)
+
+
+# To override
+# publish_year = 2022
+# publish_month = 3
+
+
+
+# We know the latest month we want to report on, now we need to find the earliest (to ensure we only show 12 months
+# which is required from the levels within the month factor).
+
+start_month <- 0
+
+if(publish_month == 12) {
+    start_month <- 1
+} else {
+    start_month <- publish_month + 1
+    start_year <- publish_year - 1
+}
+
+
+# Now use these to create a text date range of the form "May 2021 - April 2022" for use in graphics
+txt_daterange <- paste(month.name[start_month], start_year, "-", month.name[publish_month], publish_year)
+    
+
+
+```
+
+
+
+## Source Data
+
+Data was taken from the discharge section of WardWatcher. Search criteria were patients discharged between May 1, 2021 and April 30, 2022. Data extracted included the date of discharge, whether the discharge was delayed or not, and the length of delay.
+
+
+
+
+```{r filter-data}
+
+# Remove any of the data from before the time period we are interested in
+
+df <- df %>% 
+    filter(!(dc_year < start_year)) %>% 
+    filter(!(dc_year == start_year & dc_month < start_month))
+
+
+
+
+# Save the self-discharges
+df_dama <- df %>% 
+    filter(dc_reason == "H. Self discharge")
+
+
+# And now filter out the self-discharges before doing the main processing.
+# This will ensure the denominator used excludes these.
+df <- df %>%  
+    filter(dc_reason != "H. Self discharge")
+
+```
+
+
+### Rate of discharge home
+
+This chart shows the percentage of all live discharges who went home. Self-discharges have been excluded.
+
+
+
+
+```{r group-discharges-home}
+
+# Do a couple of groupings here
+# The first gives a count of each destination per month-year
+# The second gives the total count for that month-year and then displays the other variables we want
+
+df_group <- df %>% 
+    filter(dest != "Z. Mortuary") %>% 
+    group_by(dc_year, dc_month, dest) %>% 
+    summarise(dest_count = n()) %>% 
+    group_by(dc_year, dc_month) %>% 
+    summarise(dest, dest_count,
+              mth_total = sum(dest_count),
+              dest_pc = dest_count / mth_total
+              )
+
+
+
+# Now filter the grouped data for just the patients who went home
+# Using the start month and publish month to set the factor levels dynamically
+
+df_home <- df_group %>%
+    filter(dest == "F. Home or normal residence") %>%
+    mutate(month = factor(dc_month,
+                          levels = c(start_month:12, 1:publish_month),
+                          labels = c(month.abb[start_month:12], month.abb[1:publish_month])
+                          )
+           )
+
+```
+
+
+
+
+
+```{r visualise-discharges-home-percentage}
+
+# Connected scatter plot of percentage of live discharges home
+# Subtitle of plot generated using start and publish dates so updates automatically
+
+df_home %>%
+    ggplot(aes(month, dest_pc, group = 1)) +
+    geom_line(colour="light blue") +
+    geom_point(colour = "blue") +
+    theme_light() +
+    ggtitle("Discharges Home from Critical Care", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Percentage of all discharges") +
+    scale_y_continuous(labels = percent)
+
+```
+
+\newpage
+
+
+
+### Total number of patients discharged home
+
+This shows the number of patients discharged home each month.
+
+
+
+```{r visualise-discharges-home-count, out.height="40%", out.width="100%"}
+# Bar chart of count of discharges home
+
+df_home %>%
+    ggplot(aes(month, dest_count), ) +
+    geom_bar(stat = "identity", fill="light blue") +
+    scale_y_continuous(breaks = seq(0, 25, 4)) +
+    scale_x_discrete(breaks = NULL) +
+    theme_light() +
+    ggtitle("Discharges Home from Critical Care", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Number of Discharges")
+
+```
+
+
+### Delays prior to discharge home
+
+This shows the number of patients with a delay in their discharge for more than 48 hours.
+
+```{r visualise-discharge-delay, out.height="40%", out.width="100%"}
+
+df_delay <- df %>%
+    select(dc_year, dc_month, delay_mins, stay_caldays, dest) %>% 
+    filter(dest == "F. Home or normal residence") %>% 
+    mutate(month = factor(dc_month,
+                          levels = c(start_month:12, 1:publish_month),
+                          labels = c(month.abb[start_month:12], month.abb[1:publish_month])),
+           delay_days = ceiling(delay_mins / 1440)
+           ) 
+
+
+
+df_delay %>% 
+    filter(dc_month == 4) %>% 
+    filter(delay_days > 1)
+
+df_delay %>% 
+    filter(delay_days > 1) %>%
+    group_by(dc_year, dc_month) %>%
+    ggplot(aes(delay_days)) +
+    geom_histogram(binwidth = 1, fill="light blue") +
+    facet_wrap(~month) +
+    theme_bw() +
+    ggtitle("Delayed Discharge in Patients Discharged to Home", subtitle = txt_daterange) +
+    xlab("Delay (days)") +
+    ylab("Number of Patients")
+
+
+```
+
+\newpage
+
+
+### Self-Discharges
+
+Patients who discharged against medical advice we excluded from the analyses above. The total per month are shown below for completeness.
+
+
+```{r visualise-self-discharges}
+
+df_dama %>% 
+    group_by(dc_year, dc_month) %>% 
+    summarise(dest_count = n()) %>%
+    mutate(month = factor(dc_month,
+                          levels = c(start_month:12, 1:publish_month),
+                          labels = c(month.abb[start_month:12], month.abb[1:publish_month]))
+           ) %>% 
+    ggplot(aes(month, dest_count), ) +
+    geom_bar(stat = "identity", fill="light blue") +
+    scale_y_continuous(breaks = seq(0, 5, 1)) +
+    scale_x_discrete(breaks = NULL) +
+    theme_light() +
+    ggtitle("Self Discharges from Critical Care", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Number of Discharges")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
