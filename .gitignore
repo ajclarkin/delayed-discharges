@@ -1,0 +1,12 @@
+*.pdf
+*.html
+
+.Rproj.user
+.RData
+.Rhistory
+*.Rproj
+
+
+data_raw/
+data_processed/
+images/

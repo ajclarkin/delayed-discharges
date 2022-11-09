@@ -30,3 +30,13 @@ Edit the *imports* chunk and set `filename_in = ` to the new data file. Then run
 Run GenerateReport.Rmd and this will take the most recent 12 months of data from data_processed/data.csv and create the report. Chart labels are updated automatically.
 
 The charts showing percentage of patients discharged going home and count of patients going home are exported to images/ as rate.jpg and count.jpg (prepended with latest year-month).
+
+
+## Delay Data
+This looks at the delays between ready for discharge and discharge. It needs a separate data extraction (for now) and generates a pdf report.
+
+Files:
+- ImportDelayData.Rmd
+ - DelaysReport.Rmd
+
+ 

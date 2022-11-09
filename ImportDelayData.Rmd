@@ -1,0 +1,115 @@
+---
+title: "ImportDelayData"
+author: "AJ Clarkin"
+date: "25/05/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Note
+
+This is a new version with additional fields. It uses different filenames.
+
+### Import Discharge Data From WardWatcher
+
+Separate the initial import and processing of data from the report generation.
+
+Data from ward watcher should have the following columns:
+- Discharged on (date)
+- Discharged at (time)
+- Gap between ready & discharge (mins)
+- Gap considered
+- Destination (type)
+- Reason discharged
+- Calendar day stay
+- Date ready for discharge
+- Time ready for discharge
+- Date admitted to this unit
+- Time admitted to this unit
+- Destination (name)
+
+
+Data should be saved into the data_raw folder.
+
+
+```{r imports}
+
+library(tidyverse)
+library(here)
+library(lubridate)
+
+filename_out = "data_processed/data_delays.csv"
+
+filename_in = "data_raw/ww_catchup.tsv"
+
+
+```
+
+
+
+
+```{r import-data}
+
+df_data <- read_csv(here(filename_out))
+
+
+df_new <- read_tsv(here(filename_in),
+                   skip = 1,
+                   col_names = c("dc_date", "dc_time", "delay_mins", "gap_considered", "dest", "dc_reason", "stay_caldays",
+                                 "rd_date", "rd_time", "ad_date", "ad_time", "dest_name"))
+
+
+# convert ready date/time and admit date/time to isodates
+# then subtract to get actual treatment time in mins
+
+
+df_new <- df_new %>% 
+    mutate(dc_isodate = dmy_hms(paste(dc_date, dc_time)),
+           dc_year = year(dc_isodate),
+           dc_month = month(dc_isodate),
+           ready_isodate = dmy_hms(paste(rd_date, rd_time)),
+           admit_isodate = dmy_hms(paste(ad_date, ad_time)),
+           treat_mins = as.numeric(ready_isodate - admit_isodate, units = "mins"),
+           total_mins = as.numeric(dc_isodate - admit_isodate, units = "mins")
+           ) 
+
+
+
+```
+
+
+
+
+
+```{r de-duplicate}
+
+# We have the previous saved data and the new data set.
+# Merge them and then exclude duplicates.
+# Print some info about this
+
+print(paste("Rows in current data set: ", nrow(df_data)))
+print(paste("Rows in new data set: ", nrow(df_new)))
+
+df_merge <- bind_rows(df_data, df_new)
+
+print(paste("After merging: ", nrow(df_merge)))
+
+df_merge <- distinct(df_merge)
+print(paste("Total number of distinct rows in merged dataframe: ",  nrow(df_merge)))
+
+```
+
+
+
+
+```{r export-data}
+
+write_csv(df_merge, filename_out)
+
+
+```
+

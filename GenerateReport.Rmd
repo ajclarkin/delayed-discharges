@@ -237,7 +237,6 @@ df_delay %>%
     xlab("Delay (days)") +
     ylab("Number of Patients")
 
-ggsave(filename = here("images", paste(txt_imgfilename, "count.jpg", sep = "")))
 
 
 ```

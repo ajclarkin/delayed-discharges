@@ -1,0 +1,332 @@
+---
+title: "Critical Care Delayed Discharges"
+author: "AJ Clarkin (andrew.clarkin2@nhs.scot)"
+date: "08/11/2022"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+
+
+
+```{r environment}
+
+library(tidyverse)
+library(here)
+library(lubridate)
+library(scales)
+library(patchwork)
+library(viridisLite)
+
+
+datafile = "data_processed/data_delays.csv"
+
+```
+
+
+```{r import-data}
+
+# Import the data
+# This data as already been processed (column names corrected, dates converted)
+
+df <- read_csv(here(datafile))
+
+
+```
+
+
+
+```{r report-settings}
+
+# Find the latest date in the data file and use that as the latest month to report on.
+# Variables are below to override.
+
+max_date <- max(df$dc_isodate)
+publish_year <- year(max_date)
+publish_month <- month(max_date)
+
+
+# To override
+# publish_year = 2022
+# publish_month = 3
+
+
+
+# We know the latest month we want to report on, now we need to find the earliest (to ensure we only show 12 months
+# which is required from the levels within the month factor).
+
+start_month <- 0
+
+if(publish_month == 12) {
+    start_month <- 1
+} else {
+    start_month <- publish_month + 1
+    start_year <- publish_year - 1
+}
+
+
+# Now use these to create a text date range of the form "May 2021 - April 2022" for use in graphics
+txt_daterange <- paste(month.name[start_month], start_year, "-", month.name[publish_month], publish_year)
+
+# Build the start of the filepath for exporting images
+# Image content type will be appended
+txt_imgfilename <- paste(here("images"), "/", publish_year, "-", str_pad(publish_month, 2, pad="0"), "_", sep="")
+    
+
+
+```
+
+
+
+## Source Data
+
+Data was taken from WardWatcher.
+
+Date / time of admission and ready for discharge were used to calculate treatment time.
+
+Date / time of ready for discharge and actual discharge were used to calculate delay.
+
+The national standard is that discharge must occur within 4 hours from the decision and the SICSAG national audit uses the 4 hours as a cutoff to identify patients who have had a delayed discharge. That cutoff is used here.
+
+
+
+
+```{r filter-data}
+
+# Remove any of the data from before the time period we are interested in
+
+df <- df %>% 
+    filter(!(dc_year < start_year)) %>% 
+    filter(!(dc_year == start_year & dc_month < start_month))
+
+# Drop some of the columns
+
+df <- df %>% 
+    select(dc_isodate, dc_year, dc_month, treat_mins, delay_mins, total_mins, dest, dest_name, dc_reason)
+
+# And now filter out the self-discharges before doing the main processing.
+# This will ensure the denominator used excludes these.
+# df <- df %>%  
+#     filter(dc_reason != "H. Self discharge")
+
+```
+
+
+
+
+
+```{r grouping}
+
+## Find all the patients who went to ward or HDU, classify as delayed or not, and then count the whole number of bed days they were delayed.
+# So is_delayed looks at 4h+ delays
+#   is_delayed_day counts the whole days they were delayed.
+
+df_delaydays <- df %>%
+    mutate(month = factor(dc_month,
+                          levels = c(start_month:12, 1:publish_month),
+                          labels = c(month.abb[start_month:12], month.abb[1:publish_month])),
+           is_delayed = if_else(delay_mins <= 240, FALSE, TRUE),
+           is_delayed_day = if_else(floor(delay_mins / 1440) > 0, TRUE, FALSE)
+           )
+
+# Summary Table 
+# df_delaydays %>% rename(Month = month) %>%
+#     group_by(Month) %>% 
+#     summarise(Patients = n())
+
+```
+
+
+
+
+
+```{r summary-table}
+
+# Total patients by delay status or not per month
+
+df_monthsummary <- df_delaydays %>% 
+    filter(dest != "B. Intensive Care Unit" & dest != "Z. Mortuary") %>%
+    group_by(month, is_delayed) %>% 
+    summarise(grp_count=n(),
+              grp_delay_mins = sum(delay_mins),
+              grp_treat_mins = sum(treat_mins, na.rm = TRUE),
+              grp_total_mins = sum(total_mins, na.rm= TRUE)
+              ) %>% 
+    
+    group_by(month) %>% 
+    summarise(is_delayed, grp_count,
+              month_count=sum(grp_count),
+              grp_pc = grp_count / month_count,
+              grp_delay_mins, grp_treat_mins, grp_total_mins,
+              tot = sum(grp_total_mins)
+              ) 
+
+
+```
+
+## Delayed Discharges
+
+The following charts look at discharges to destinations within NHS Grampian. Transfers to Critical Care Units in other health boards
+were excluded as these make up a small number, are not modifiable, and are usually timed based on staffing, ambulance availability, and capacity at the receiving hospital.
+
+Patients who died within Critical Care were also excluded as they would not be listed for discharge.
+
+
+```{r unit-charts, fig.width=8}
+
+# Connected scatterplot of rate of delayed discharge.
+
+p1 <- df_monthsummary %>% filter(is_delayed == TRUE) %>%
+    ggplot(aes(x=month, y=grp_pc, group=1)) +
+    geom_line(colour="light blue") +
+    geom_point(colour = "blue") +
+    theme_bw() +
+    ggtitle("Delayed Discharges from Critical Care - Percentage of Discharges", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Percentage of All Discharges") +
+    scale_y_continuous(labels = percent, limits = c(0,1))
+
+
+
+# Bar chart showing total number of patients delayed each month.
+
+p2 <- df_monthsummary %>% filter(is_delayed == TRUE) %>%
+    ggplot(aes(month, grp_count), ) +
+    geom_bar(stat = "identity", fill="light blue") +
+    # scale_y_continuous(breaks = seq(0, 25, 4)) +
+    # scale_x_discrete(breaks = NULL) +
+    theme_light() +
+    ggtitle("Delayed Discharges from Critical Care - Number of Patients", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Number of Patients Delayed")
+
+p1
+p2
+```
+
+
+
+
+## Delayed Discharges By Destination
+
+WardWatcher records the location the patient was actually discharged to. So, for some of the
+patients who have been delayed the destination has changed and they have gone directly home
+rather than to the ward they were listed for. Patients able to go home directly without requirement
+for a step-down bed would not usually experience a delay.
+
+
+```{r, fig.width=8}
+
+df_destsummary <- df_delaydays %>% 
+    filter(dest != "B. Intensive Care Unit" & dest != "Z. Mortuary") %>%
+    group_by(month, dest, is_delayed) %>% 
+    summarise(grp_count=n(),
+              grp_delay_mins = sum(delay_mins),
+              grp_treat_mins = sum(treat_mins, na.rm = TRUE),
+              grp_total_mins = sum(total_mins, na.rm= TRUE)
+              ) %>% 
+    
+    group_by(month) %>% 
+    summarise(dest, is_delayed, grp_count,
+              month_count=sum(grp_count),
+              grp_pc = grp_count / month_count,
+              grp_delay_mins, grp_treat_mins, grp_total_mins,
+              month_tot_mins = sum(grp_total_mins)
+              ) 
+
+# df_destsummary
+
+
+
+```
+
+```{r fig.width=8}
+
+# Stacked bar chart of no of delayed patients by month showing discharge destination
+
+df_destsummary %>% filter(is_delayed == TRUE) %>% 
+    ggplot(aes(x=month, y=grp_count, fill=dest)) +
+    geom_bar(stat="identity", position = position_stack(reverse = TRUE)) +
+    theme_light() +
+    ggtitle("Discharge Destination for Patients with Delayed Discharge", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Number of Patients")
+
+
+
+
+# Connected line for total number of delays by month
+
+df_destsummary %>% filter(is_delayed == TRUE) %>% 
+    group_by(month) %>% 
+    summarise(delay_days = sum(grp_delay_mins) / (60*24)) %>% 
+    ggplot(aes(x=month, y=delay_days, group=1)) +
+    geom_point(colour="dark blue") +
+    geom_line(colour="blue") +
+    theme_light() +
+    ggtitle("Total Duration of Delay in Critical Care", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Cumulative Delay (days)")
+
+
+
+# Connected line for number of delays by month by destination
+
+df_destsummary %>% filter(is_delayed == TRUE) %>% 
+    # group_by(month) %>% 
+    # summarise(delay_days = sum(grp_delay_mins) / (60*24)) %>% 
+    ggplot(aes(x=month, y=(grp_delay_mins / (60*24)), colour=dest, group=dest)) +
+    geom_point() +
+    geom_line() +
+    theme_light() +
+    ggtitle("Total Duration of Delay in Critical Care by Destination", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Cumulative Delay (days)") +
+    labs(colour = "Destination Type")
+```
+\newpage
+
+## Ward Discharges
+
+The greatest proportion of delays are to wards. Here the wards are grouped according to ward numbers.
+
+
+
+
+```{r ward-type, fig.width=8}
+
+df_ward <- df_delaydays %>% 
+    filter(dest == "A. Ward" & grepl("Ward", dest_name)) %>% 
+    mutate(ward_group = as.numeric(substring(dest_name, first=6, last=6)) *100,
+           ward_group = as.factor(ward_group)
+           )
+
+
+df_ward %>% filter(is_delayed == TRUE) %>% 
+    group_by(month, ward_group) %>% 
+    summarise(group_delay_days = sum(delay_mins) / (60 * 24)) %>% 
+    ggplot(aes(x=month, y=group_delay_days, colour=ward_group, group=ward_group)) +
+    geom_point() +
+    geom_line() +
+    theme_light() +
+    ggtitle("Total Duration of Delay in Critical Care by Ward Group", subtitle = txt_daterange) +
+    xlab("Month") +
+    ylab("Cumulative Delay (days)") +
+    labs(colour = "Ward Grouping")
+
+```
+
+
+
+
