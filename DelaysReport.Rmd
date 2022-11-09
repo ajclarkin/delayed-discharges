@@ -1,6 +1,6 @@
 ---
 title: "Critical Care Delayed Discharges"
-author: "AJ Clarkin (andrew.clarkin2@nhs.scot)"
+author: "AJ Clarkin"
 date: "08/11/2022"
 output:
   html_document: default
