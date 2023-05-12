@@ -11,16 +11,19 @@ Search for patients discharged between the first and last day of analysis period
 - Discharged on (date)
 - Discharged at (time)
 - Gap between ready & discharge (mins)
-- Gap considered
 - Destination (type)
+- Destination (name)
 - Reason discharged
-- Calendar day stay
+- Date ready for discharge
+- Time ready for discharge
+- Date admitted to this unit
+- Time admitted to this unit
 
-Save this file as tab-separated to the data_raw folder.
+Save this file as tab-separated to the data_raw folder. (CSV would also work. For other exports in WW it doesn't because it does not apply quotes correctly if the field contains a comma. Annoying.)
 
 
 ### Import Data
-This uses ImportDischargeData.Rmd. It reads in the exported data and then adds it to data_processed/data.csv
+This uses ImportUnified.Rmd. It reads in the exported data and then adds it to data_processed/data.csv This supersedes ImportDischargeData.Rmd and ImportDelayData.Rmd.
 
 Edit the *imports* chunk and set `filename_in = ` to the new data file. Then run the script.
 
@@ -33,10 +36,10 @@ The charts showing percentage of patients discharged going home and count of pat
 
 
 ## Delay Data
-This looks at the delays between ready for discharge and discharge. It needs a separate data extraction (for now) and generates a pdf report.
+This looks at the delays between ready for discharge and discharge. This uses the same data source built from ImportUnified.Rmd and generates a pdf report.
 
 Files:
-- ImportDelayData.Rmd
- - DelaysReport.Rmd
+- ImportUnified.Rmd
+- DelaysReport.Rmd
 
  

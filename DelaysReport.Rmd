@@ -1,10 +1,10 @@
 ---
 title: "Critical Care Delayed Discharges"
 author: "AJ Clarkin"
-date: "08/11/2022"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 
@@ -26,11 +26,11 @@ library(tidyverse)
 library(here)
 library(lubridate)
 library(scales)
-library(patchwork)
+# library(patchwork)
 library(viridisLite)
 
 
-datafile = "data_processed/data_delays.csv"
+datafile = "data_processed/data.csv"
 
 ```
 
@@ -70,6 +70,7 @@ start_month <- 0
 
 if(publish_month == 12) {
     start_month <- 1
+    start_year <- publish_year
 } else {
     start_month <- publish_month + 1
     start_year <- publish_year - 1
